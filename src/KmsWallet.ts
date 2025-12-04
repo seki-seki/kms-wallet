@@ -136,7 +136,7 @@ export class KmsWallet {
       throw new Error('Invalid DER signature: R marker');
     }
     const rLength = signature[offset++];
-    let r = Buffer.from(signature.slice(offset, offset + rLength));
+    const rRaw = Buffer.from(signature.slice(offset, offset + rLength));
     offset += rLength;
 
     // S value
@@ -144,36 +144,47 @@ export class KmsWallet {
       throw new Error('Invalid DER signature: S marker');
     }
     const sLength = signature[offset++];
-    let s = Buffer.from(signature.slice(offset, offset + sLength));
+    const sRaw = Buffer.from(signature.slice(offset, offset + sLength));
 
+    // Process r: remove leading zeros and pad to 32 bytes
+    const r = this.normalizeSignatureComponent(rRaw);
+
+    // Process s: remove leading zeros, pad to 32 bytes, and apply low-s normalization
+    const s = this.normalizeAndLowS(sRaw);
+
+    return { r, s };
+  }
+
+  private normalizeSignatureComponent(component: Buffer): Buffer {
     // Remove leading zero bytes (DER padding)
-    while (r.length > 32 && r[0] === 0x00) {
-      r = r.slice(1);
-    }
-    while (s.length > 32 && s[0] === 0x00) {
-      s = s.slice(1);
+    let normalized = component;
+    while (normalized.length > 32 && normalized[0] === 0x00) {
+      normalized = normalized.slice(1);
     }
 
     // Pad to 32 bytes if needed
-    if (r.length < 32) {
-      r = Buffer.concat([Buffer.alloc(32 - r.length, 0), r]);
-    }
-    if (s.length < 32) {
-      s = Buffer.concat([Buffer.alloc(32 - s.length, 0), s]);
+    if (normalized.length < 32) {
+      normalized = Buffer.concat([Buffer.alloc(32 - normalized.length, 0), normalized]);
     }
 
+    return normalized;
+  }
+
+  private normalizeAndLowS(s: Buffer): Buffer {
+    // First normalize the component
+    const normalized = this.normalizeSignatureComponent(s);
+
     // Ethereum requires low-s values (s <= n/2)
-    // secp256k1 curve order
     const n = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
     const halfN = n / 2n;
 
-    const sBigInt = BigInt('0x' + s.toString('hex'));
+    const sBigInt = BigInt('0x' + normalized.toString('hex'));
     if (sBigInt > halfN) {
       const sNormalized = n - sBigInt;
-      s = Buffer.from(sNormalized.toString(16).padStart(64, '0'), 'hex');
+      return Buffer.from(sNormalized.toString(16).padStart(64, '0'), 'hex');
     }
 
-    return { r, s };
+    return normalized;
   }
 
   private async findRecoveryParam(

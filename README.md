@@ -43,9 +43,37 @@ const signedTx = await wallet.signTransaction({
 });
 ```
 
+### Multi-User Wallets
+
+For managing multiple users with individual KMS keys:
+
+```typescript
+import { KmsWallet } from 'kms-wallet';
+import { KMSClient, CreateKeyCommand, KeySpec, KeyUsageType } from '@aws-sdk/client-kms';
+
+class WalletManager {
+  private kmsClient: KMSClient;
+
+  async createUserWallet(userId: string) {
+    // Create a new KMS key for the user
+    const response = await this.kmsClient.send(new CreateKeyCommand({
+      KeySpec: KeySpec.ECC_SECG_P256K1,
+      KeyUsage: KeyUsageType.SIGN_VERIFY,
+      Description: `Ethereum wallet for user ${userId}`,
+    }));
+
+    const keyId = response.KeyMetadata?.KeyId;
+    const wallet = new KmsWallet({ keyId });
+    return { keyId, wallet };
+  }
+}
+```
+
 ### With AWS Amplify Gen2
 
-See `example/` directory for complete usage examples with AWS Amplify Gen2.
+See `example/` directory for complete usage examples:
+- `index.ts` - Basic single-wallet example
+- `multi-user.ts` - Multi-user wallet management
 
 ## KMS Key Setup
 

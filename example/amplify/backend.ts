@@ -1,10 +1,9 @@
 import { defineBackend } from '@aws-amplify/backend';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 
 const backend = defineBackend({});
 
-// Create KMS key for Ethereum signing
+// Create a single KMS key for basic example (index.ts)
 const kmsKey = new kms.Key(backend.stack, 'EthereumSigningKey', {
   description: 'KMS key for Ethereum transaction signing',
   keySpec: kms.KeySpec.ECC_SECG_P256K1,
@@ -19,6 +18,7 @@ backend.addOutput({
   },
 });
 
-// If you're using Lambda functions, grant them permission to use the KMS key
-// Example:
-// kmsKey.grantSign(myFunction);
+// Note: For multi-user scenarios (multi-user.ts), you'll need:
+// 1. IAM permissions to create KMS keys dynamically
+// 2. A database (like DynamoDB) to store user -> keyId mappings
+// See backend-multi.ts for an example configuration

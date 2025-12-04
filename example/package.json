@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx index.ts",
+    "dev:multi": "tsx multi-user.ts",
     "sandbox": "ampx sandbox"
   },
   "dependencies": {
