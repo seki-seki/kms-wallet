@@ -3,6 +3,10 @@ import {
   GetPublicKeyCommand,
   SignCommand,
   MessageType,
+  CreateKeyCommand,
+  KeySpec,
+  KeyUsageType,
+  Tag,
 } from '@aws-sdk/client-kms';
 import { ethers } from 'ethers';
 
@@ -10,6 +14,21 @@ export interface KmsWalletConfig {
   keyId: string;
   region?: string;
   kmsClient?: KMSClient;
+}
+
+export interface CreateKmsWalletConfig {
+  region?: string;
+  kmsClient?: KMSClient;
+  description?: string;
+  tags?: Record<string, string>;
+}
+
+export interface CreateKmsWalletResult {
+  wallet: KmsWallet;
+  keyId: string;
+  keyArn: string;
+  address: string;
+  publicKey: string;
 }
 
 export class KmsWallet {
@@ -23,6 +42,72 @@ export class KmsWallet {
     this.kmsClient = config.kmsClient || new KMSClient({
       region: config.region || process.env.AWS_REGION || 'ap-northeast-1'
     });
+  }
+
+  /**
+   * Create a new KMS key and KmsWallet instance
+   *
+   * @param config - Configuration for creating the KMS key
+   * @returns Object containing the wallet instance, key ID, and Ethereum address
+   *
+   * @example
+   * ```typescript
+   * const { wallet, keyId, address } = await KmsWallet.create({
+   *   description: 'Wallet for user alice',
+   *   tags: { UserId: 'alice', Environment: 'production' }
+   * });
+   *
+   * // Save to database
+   * await db.user.update({
+   *   where: { id: 'alice' },
+   *   data: { kmsKeyId: keyId, ethereumAddress: address }
+   * });
+   * ```
+   */
+  static async create(config: CreateKmsWalletConfig = {}): Promise<CreateKmsWalletResult> {
+    const kmsClient = config.kmsClient || new KMSClient({
+      region: config.region || process.env.AWS_REGION || 'ap-northeast-1',
+    });
+
+    // Convert tags object to AWS Tag format
+    const tags: Tag[] | undefined = config.tags
+      ? Object.entries(config.tags).map(([key, value]) => ({
+          TagKey: key,
+          TagValue: value,
+        }))
+      : undefined;
+
+    // Create KMS key with Ethereum-compatible specs
+    const createKeyCommand = new CreateKeyCommand({
+      KeySpec: KeySpec.ECC_SECG_P256K1,
+      KeyUsage: KeyUsageType.SIGN_VERIFY,
+      Description: config.description || 'Ethereum wallet key',
+      Tags: tags,
+    });
+
+    const response = await kmsClient.send(createKeyCommand);
+
+    if (!response.KeyMetadata?.KeyId) {
+      throw new Error('Failed to create KMS key');
+    }
+
+    const keyId = response.KeyMetadata.KeyId;
+    const keyArn = response.KeyMetadata.Arn || '';
+
+    // Create wallet instance
+    const wallet = new KmsWallet({ keyId, kmsClient });
+
+    // Get address and public key (only called once here)
+    const address = await wallet.getAddress();
+    const publicKey = await wallet.getPublicKey();
+
+    return {
+      wallet,
+      keyId,
+      keyArn,
+      address,
+      publicKey: Buffer.from(publicKey).toString('hex'),
+    };
   }
 
   async getPublicKey(): Promise<Uint8Array> {

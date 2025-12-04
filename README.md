@@ -43,28 +43,41 @@ const signedTx = await wallet.signTransaction({
 });
 ```
 
-### Multi-User Wallets
-
-For managing multiple users with individual KMS keys:
+### Creating Wallets
 
 ```typescript
 import { KmsWallet } from 'kms-wallet';
-import { KMSClient, CreateKeyCommand, KeySpec, KeyUsageType } from '@aws-sdk/client-kms';
 
+// Create a new wallet (KMS key + address)
+const { wallet, keyId, address } = await KmsWallet.create({
+  description: 'Wallet for user alice',
+  tags: {
+    UserId: 'alice',
+    Environment: 'production'
+  }
+});
+
+// Save to database
+await db.userWallet.create({
+  data: { userId: 'alice', kmsKeyId: keyId, ethereumAddress: address }
+});
+
+// Use the wallet
+const signature = await wallet.personalSign('Hello!');
+```
+
+### Multi-User Wallets
+
+```typescript
 class WalletManager {
-  private kmsClient: KMSClient;
-
   async createUserWallet(userId: string) {
-    // Create a new KMS key for the user
-    const response = await this.kmsClient.send(new CreateKeyCommand({
-      KeySpec: KeySpec.ECC_SECG_P256K1,
-      KeyUsage: KeyUsageType.SIGN_VERIFY,
-      Description: `Ethereum wallet for user ${userId}`,
-    }));
+    // One-liner to create KMS key + get address
+    const { wallet, keyId, address } = await KmsWallet.create({
+      description: `Ethereum wallet for user ${userId}`,
+      tags: { UserId: userId }
+    });
 
-    const keyId = response.KeyMetadata?.KeyId;
-    const wallet = new KmsWallet({ keyId });
-    return { keyId, wallet };
+    return { wallet, keyId, address };
   }
 }
 ```

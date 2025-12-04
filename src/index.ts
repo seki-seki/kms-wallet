@@ -1,1 +1,6 @@
-export { KmsWallet, KmsWalletConfig } from './KmsWallet';
+export {
+  KmsWallet,
+  KmsWalletConfig,
+  CreateKmsWalletConfig,
+  CreateKmsWalletResult,
+} from './KmsWallet';
