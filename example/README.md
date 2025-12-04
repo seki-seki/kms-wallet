@@ -77,6 +77,35 @@ npm run dev:multi
 - Implement proper access control using Amplify Auth
 - Consider key rotation and backup strategies
 
+### 3. Next.js Integration
+
+For Next.js SSR applications where you can't separate backend:
+
+**Files:**
+- `nextjs-integration.md` - Complete integration guide
+- `nextjs-example-app-router.ts` - App Router API Route (app/api/wallet/[userId]/route.ts)
+- `nextjs-example-pages-router.ts` - Pages Router API Route (pages/api/wallet/[userId].ts)
+- `amplify-nextjs-backend.ts` - Amplify Hosting backend configuration
+
+**Quick Start:**
+```bash
+# 1. Copy the appropriate file to your Next.js project
+cp nextjs-example-app-router.ts your-nextjs-app/app/api/wallet/[userId]/route.ts
+
+# 2. Set environment variables
+AWS_REGION=ap-northeast-1
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
+```
+
+**Important:** Next.jsの実行環境（Lambda/ECS）に以下のKMS権限が必要です：
+- `kms:GetPublicKey`
+- `kms:Sign`
+- `kms:DescribeKey`
+
+Vercel/Netlify: IAM認証情報を環境変数で設定
+Amplify Hosting: 実行ロールにKMS権限を付与（`amplify-nextjs-backend.ts`参照）
+
 ## What the examples demonstrate
 
 The examples demonstrate all main features of the kms-wallet library:
