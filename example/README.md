@@ -77,45 +77,45 @@ npm run dev:multi
 - Implement proper access control using Amplify Auth
 - Consider key rotation and backup strategies
 
-### 3. Next.js Integration
+### 3. Next.js + Amplify Gen2 with Lambda (推奨)
 
-For Next.js SSR applications where you can't separate backend:
+**Lambda関数に切り出す方式** - backend.tsで権限管理が完結します。
 
-**Files:**
-- `nextjs-integration.md` - Complete integration guide
-- `nextjs-wallet-create-app-router.ts` - Wallet creation endpoint (app/api/wallet/create/route.ts)
-- `nextjs-example-app-router.ts` - Wallet operations (app/api/wallet/[userId]/route.ts)
-- `nextjs-wallet-create-pages-router.ts` - Wallet creation (pages/api/wallet/create.ts)
-- `nextjs-example-pages-router.ts` - Wallet operations (pages/api/wallet/[userId].ts)
-- `amplify-nextjs-backend.ts` - Amplify Hosting backend configuration
+**Directory:** `amplify-lambda/`
+
+**アーキテクチャ:**
+```
+Next.js (KMS権限不要)
+  ↓ Function URL
+Lambda (KMS権限あり) ← backend.tsで権限付与
+  ↓
+AWS KMS
+```
+
+**メリット:**
+- ✅ backend.tsで権限管理が完結
+- ✅ Next.jsにKMS権限不要（セキュリティ向上）
+- ✅ 最小権限の原則
+- ✅ CloudWatch Logsで監査可能
 
 **Quick Start:**
 ```bash
-# 1. Copy files to your Next.js project (App Router example)
-cp nextjs-wallet-create-app-router.ts app/api/wallet/create/route.ts
-cp nextjs-example-app-router.ts app/api/wallet/[userId]/route.ts
+# 1. ファイルをコピー
+cp -r amplify-lambda/* your-project/amplify/
 
-# 2. Set environment variables
-AWS_REGION=ap-northeast-1
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
+# 2. Lambda関数の依存関係をインストール
+cd amplify/functions/create-wallet && npm install
+cd ../sign-message && npm install
+cd ../sign-transaction && npm install
 
-# 3. Implement DB saving logic in create endpoint
-# Edit: app/api/wallet/create/route.ts -> saveUserWallet()
+# 3. デプロイ
+npx ampx sandbox
+
+# 4. Next.jsから呼び出し
+# Function URLsが自動生成され、環境変数に設定される
 ```
 
-**Flow:**
-1. POST `/api/wallet/create` - KMSキー作成 + アドレス取得 + DB保存
-2. GET `/api/wallet/[userId]` - アドレス取得（DBから）
-3. POST `/api/wallet/[userId]` - 署名（KMSを使用）
-
-**Important:** Next.jsの実行環境（Lambda/ECS）に以下のKMS権限が必要です：
-- `kms:GetPublicKey`
-- `kms:Sign`
-- `kms:DescribeKey`
-
-Vercel/Netlify: IAM認証情報を環境変数で設定
-Amplify Hosting: 実行ロールにKMS権限を付与（`amplify-nextjs-backend.ts`参照）
+**詳細:** `amplify-lambda/README.md`を参照
 
 ## What the examples demonstrate
 

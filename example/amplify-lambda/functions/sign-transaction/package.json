@@ -1,0 +1,10 @@
+{
+  "name": "sign-transaction",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "kms-wallet": "file:../../../../",
+    "@aws-sdk/client-kms": "^3.0.0",
+    "ethers": "^6.0.0"
+  }
+}
