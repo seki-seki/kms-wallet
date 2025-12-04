@@ -83,20 +83,31 @@ For Next.js SSR applications where you can't separate backend:
 
 **Files:**
 - `nextjs-integration.md` - Complete integration guide
-- `nextjs-example-app-router.ts` - App Router API Route (app/api/wallet/[userId]/route.ts)
-- `nextjs-example-pages-router.ts` - Pages Router API Route (pages/api/wallet/[userId].ts)
+- `nextjs-wallet-create-app-router.ts` - Wallet creation endpoint (app/api/wallet/create/route.ts)
+- `nextjs-example-app-router.ts` - Wallet operations (app/api/wallet/[userId]/route.ts)
+- `nextjs-wallet-create-pages-router.ts` - Wallet creation (pages/api/wallet/create.ts)
+- `nextjs-example-pages-router.ts` - Wallet operations (pages/api/wallet/[userId].ts)
 - `amplify-nextjs-backend.ts` - Amplify Hosting backend configuration
 
 **Quick Start:**
 ```bash
-# 1. Copy the appropriate file to your Next.js project
-cp nextjs-example-app-router.ts your-nextjs-app/app/api/wallet/[userId]/route.ts
+# 1. Copy files to your Next.js project (App Router example)
+cp nextjs-wallet-create-app-router.ts app/api/wallet/create/route.ts
+cp nextjs-example-app-router.ts app/api/wallet/[userId]/route.ts
 
 # 2. Set environment variables
 AWS_REGION=ap-northeast-1
 AWS_ACCESS_KEY_ID=your-key
 AWS_SECRET_ACCESS_KEY=your-secret
+
+# 3. Implement DB saving logic in create endpoint
+# Edit: app/api/wallet/create/route.ts -> saveUserWallet()
 ```
+
+**Flow:**
+1. POST `/api/wallet/create` - KMSキー作成 + アドレス取得 + DB保存
+2. GET `/api/wallet/[userId]` - アドレス取得（DBから）
+3. POST `/api/wallet/[userId]` - 署名（KMSを使用）
 
 **Important:** Next.jsの実行環境（Lambda/ECS）に以下のKMS権限が必要です：
 - `kms:GetPublicKey`

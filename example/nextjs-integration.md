@@ -10,7 +10,45 @@ npm install kms-wallet ethers @aws-sdk/client-kms
 
 ## 2. API Route実装
 
-### App Router (app/api/wallet/[userId]/route.ts)
+### ウォレット作成 (app/api/wallet/create/route.ts)
+
+まず、ユーザーのウォレット（KMSキー）を作成するエンドポイントが必要です。
+
+```typescript
+// app/api/wallet/create/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { KmsWallet } from 'kms-wallet';
+import { KMSClient, CreateKeyCommand, KeySpec, KeyUsageType } from '@aws-sdk/client-kms';
+
+export async function POST(request: NextRequest) {
+  const { userId } = await request.json();
+
+  // 1. KMSキーを作成
+  const kmsClient = new KMSClient({ region: 'ap-northeast-1' });
+  const response = await kmsClient.send(new CreateKeyCommand({
+    KeySpec: KeySpec.ECC_SECG_P256K1,
+    KeyUsage: KeyUsageType.SIGN_VERIFY,
+    Description: `Ethereum wallet for user ${userId}`,
+  }));
+
+  const keyId = response.KeyMetadata?.KeyId!;
+
+  // 2. アドレスを取得（初回のみ）
+  const wallet = new KmsWallet({ keyId, kmsClient });
+  const address = await wallet.getAddress();
+
+  // 3. DBに保存
+  await db.userWallet.create({
+    data: { userId, kmsKeyId: keyId, ethereumAddress: address }
+  });
+
+  return NextResponse.json({ keyId, address });
+}
+```
+
+完全な実装は `nextjs-wallet-create-app-router.ts` を参照してください。
+
+### ウォレット操作 (app/api/wallet/[userId]/route.ts)
 
 ```typescript
 import { NextRequest, NextResponse } from 'next/server';
@@ -155,6 +193,107 @@ export default async function handler(
 ```
 
 ## 3. クライアントサイドから呼び出し
+
+### 完全なフロー
+
+```typescript
+// components/WalletManager.tsx
+'use client';
+
+import { useState } from 'react';
+
+export function WalletManager({ userId }: { userId: string }) {
+  const [address, setAddress] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [walletExists, setWalletExists] = useState(false);
+
+  // 1. ウォレットを作成
+  const createWallet = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/wallet/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setAddress(data.address);
+        setWalletExists(true);
+        console.log('Wallet created:', data);
+      }
+    } catch (error) {
+      console.error('Failed to create wallet:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. アドレスを取得（DBから）
+  const getAddress = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/wallet/${userId}`);
+      const data = await res.json();
+
+      if (data.address) {
+        setAddress(data.address);
+        setWalletExists(true);
+      }
+    } catch (error) {
+      console.error('Failed to get address:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3. メッセージに署名
+  const signMessage = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/wallet/${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Hello, Ethereum!' }),
+      });
+      const data = await res.json();
+      console.log('Signature:', data.signature);
+      alert(`Signed! Check console for signature.`);
+    } catch (error) {
+      console.error('Failed to sign:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2>Wallet for User: {userId}</h2>
+        {address && <p>Address: {address}</p>}
+      </div>
+
+      {!walletExists ? (
+        <button onClick={createWallet} disabled={loading}>
+          {loading ? 'Creating...' : 'Create Wallet'}
+        </button>
+      ) : (
+        <div className="space-x-2">
+          <button onClick={getAddress} disabled={loading}>
+            Refresh Address
+          </button>
+          <button onClick={signMessage} disabled={loading}>
+            Sign Message
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### シンプル版
 
 ```typescript
 // components/WalletButton.tsx
