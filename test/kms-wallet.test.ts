@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import Ganache from 'ganache';
-import { KmsWallet, KmsSigner } from '../src';
+import { KmsWallet, KmsSigner, KmsHdWallet } from '../src';
 import { KMSClient, ScheduleKeyDeletionCommand } from '@aws-sdk/client-kms';
 
 describe('KMS Wallet', () => {
@@ -489,6 +489,226 @@ describe('KMS Wallet', () => {
         const recoveredAddress = ethers.verifyMessage(message, signature);
         expect(recoveredAddress.toLowerCase()).toBe(address.toLowerCase());
         console.log(`✓ Message signature verified`);
+      });
+    });
+  });
+
+  describe('KmsHdWallet (HD Wallet)', () => {
+    let hdWalletKeyId: string | undefined;
+
+    describe('HDウォレット作成', () => {
+      it('HDウォレットを作成できる', async () => {
+        if (!process.env.AWS_PROFILE) {
+          console.log('Skipping: No AWS_PROFILE set');
+          return;
+        }
+
+        const { wallet, keyId, firstAddress, basePath } = await KmsHdWallet.create({
+          description: 'Test HD Wallet (auto-cleanup)',
+          tags: {
+            Environment: 'test',
+            CreatedBy: 'jest',
+            AutoCleanup: 'true',
+          },
+        });
+
+        hdWalletKeyId = keyId;
+        createdKmsKeyIds.push(keyId);
+
+        expect(wallet).toBeInstanceOf(KmsHdWallet);
+        expect(keyId).toBeDefined();
+        expect(firstAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
+        expect(basePath).toBe("m/44'/60'/0'/0");
+
+        console.log(`✓ Created HD wallet:`);
+        console.log(`  Key ID: ${keyId}`);
+        console.log(`  First address: ${firstAddress}`);
+        console.log(`  Base path: ${basePath}`);
+      });
+    });
+
+    describe('アドレス導出', () => {
+      it('複数のアドレスを導出できる', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+
+        const address0 = await hdWallet.getAddress(0);
+        const address1 = await hdWallet.getAddress(1);
+        const address2 = await hdWallet.getAddress(2);
+
+        expect(address0).toMatch(/^0x[a-fA-F0-9]{40}$/);
+        expect(address1).toMatch(/^0x[a-fA-F0-9]{40}$/);
+        expect(address2).toMatch(/^0x[a-fA-F0-9]{40}$/);
+
+        // すべて異なるアドレス
+        expect(address0).not.toBe(address1);
+        expect(address1).not.toBe(address2);
+        expect(address0).not.toBe(address2);
+
+        console.log(`✓ Derived addresses:`);
+        console.log(`  [0]: ${address0}`);
+        console.log(`  [1]: ${address1}`);
+        console.log(`  [2]: ${address2}`);
+      });
+
+      it('同じインデックスは常に同じアドレスを返す', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+
+        const address1 = await hdWallet.getAddress(0);
+        const address2 = await hdWallet.getAddress(0);
+
+        expect(address1).toBe(address2);
+        console.log(`✓ Deterministic address: ${address1}`);
+      });
+
+      it('複数アドレスを一括取得できる', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+        const addresses = await hdWallet.getAddresses(5);
+
+        expect(addresses).toHaveLength(5);
+        addresses.forEach((addr, idx) => {
+          expect(addr).toMatch(/^0x[a-fA-F0-9]{40}$/);
+          console.log(`  [${idx}]: ${addr}`);
+        });
+      });
+    });
+
+    describe('署名機能', () => {
+      it('メッセージに署名できる', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+        const message = 'Hello from HD Wallet!';
+        const signature = await hdWallet.signMessage(0, message);
+
+        expect(signature).toMatch(/^0x[a-fA-F0-9]{130}$/);
+
+        // 署名検証
+        const address = await hdWallet.getAddress(0);
+        const recoveredAddress = ethers.verifyMessage(message, signature);
+        expect(recoveredAddress.toLowerCase()).toBe(address.toLowerCase());
+
+        console.log(`✓ Message signed and verified for index 0`);
+      });
+
+      it('異なるインデックスで異なる署名', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+        const message = 'Same message';
+
+        const sig0 = await hdWallet.signMessage(0, message);
+        const sig1 = await hdWallet.signMessage(1, message);
+
+        expect(sig0).not.toBe(sig1);
+        console.log(`✓ Different signatures for different indices`);
+      });
+    });
+
+    describe('トランザクション送信', () => {
+      it('HDウォレットでトランザクションを送信できる', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+
+        // インデックス0のウォレット取得
+        const signer = await hdWallet.getSigner(0, provider);
+        const address = await signer.getAddress();
+
+        // 資金供給
+        const fundTx = await fundingWallet.sendTransaction({
+          to: address,
+          value: ethers.parseEther('1.0'),
+        });
+        await fundTx.wait();
+
+        // トランザクション送信
+        const recipient = ethers.Wallet.createRandom().address;
+        const tx = await signer.sendTransaction({
+          to: recipient,
+          value: ethers.parseEther('0.1'),
+        });
+
+        expect(tx.hash).toBeDefined();
+        console.log(`✓ Transaction sent from HD wallet index 0: ${tx.hash}`);
+
+        const receipt = await tx.wait();
+        expect(receipt?.status).toBe(1);
+        console.log(`✓ Transaction confirmed in block ${receipt?.blockNumber}`);
+      });
+
+      it('複数インデックスから個別にトランザクション送信できる', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+
+        // インデックス1のウォレット
+        const signer1 = await hdWallet.getSigner(1, provider);
+        const address1 = await signer1.getAddress();
+
+        // 資金供給
+        const fundTx = await fundingWallet.sendTransaction({
+          to: address1,
+          value: ethers.parseEther('0.5'),
+        });
+        await fundTx.wait();
+
+        // トランザクション送信
+        const recipient = ethers.Wallet.createRandom().address;
+        const tx = await signer1.sendTransaction({
+          to: recipient,
+          value: ethers.parseEther('0.1'),
+        });
+
+        const receipt = await tx.wait();
+        expect(receipt?.status).toBe(1);
+        console.log(`✓ Transaction from HD wallet index 1: ${tx.hash}`);
+      });
+    });
+
+    describe('コスト削減の検証', () => {
+      it('1つのKMSキーで複数ウォレットを管理', async () => {
+        if (!hdWalletKeyId) {
+          console.log('Skipping: No HD wallet created');
+          return;
+        }
+
+        const hdWallet = new KmsHdWallet({ keyId: hdWalletKeyId });
+
+        // 10個のアドレスを導出
+        const addresses = await hdWallet.getAddresses(10);
+
+        expect(addresses).toHaveLength(10);
+        console.log(`✓ Generated 10 addresses from single KMS key:`);
+        console.log(`  KMS Key: ${hdWalletKeyId}`);
+        console.log(`  Cost: $1/month (fixed)`);
+        console.log(`  vs. 10 separate keys: $10/month`);
       });
     });
   });

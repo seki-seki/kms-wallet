@@ -9,6 +9,7 @@ Ethereum wallet library using AWS KMS for signing transactions. Compatible with 
 - 🔑 Public key and address retrieval from KMS
 - 🎯 ethers.js Signer interface compatible
 - 🚀 One-line wallet creation with KMS key generation
+- 💰 **HD Wallet (Hierarchical Deterministic)** - Generate unlimited addresses from one KMS key
 - 📦 TypeScript support
 
 ## Installation
@@ -25,7 +26,7 @@ npm install kms-wallet ethers @aws-sdk/client-kms
 
 ```typescript
 import { ethers } from 'ethers';
-import { KmsWallet, KmsSigner } from 'kms-wallet';
+import { KmsWallet, KmsSigner, KmsHdWallet } from 'kms-wallet';
 
 // Setup
 const kmsWallet = new KmsWallet({
@@ -109,6 +110,129 @@ console.log(`KMS Key ID: ${keyId}`);
 
 // Use immediately
 const signature = await wallet.personalSign('Hello!');
+```
+
+### HD Wallet (Cost Optimization)
+
+**KmsHdWallet** uses BIP32/BIP44 hierarchical deterministic wallet standard to generate unlimited addresses from a single KMS key. This dramatically reduces costs from **$1/user/month** to **$1/month total**.
+
+#### How it works
+
+1. One KMS key generates a deterministic seed (via KMS signature)
+2. The seed creates a BIP32 master node with BIP39 mnemonic
+3. Child wallets are derived using standard path: `m/44'/60'/0'/0/{index}`
+4. Each index (0, 1, 2, ...) produces a unique, deterministic address
+
+#### Basic Usage
+
+```typescript
+import { KmsHdWallet } from 'kms-wallet';
+import { ethers } from 'ethers';
+
+// Create master HD wallet (one-time setup)
+const { wallet, keyId, firstAddress } = await KmsHdWallet.create({
+  description: 'Master HD Wallet for all users',
+  tags: { Application: 'MyApp' }
+});
+
+console.log(`Master KMS Key: ${keyId}`);
+console.log(`First address (index 0): ${firstAddress}`);
+
+// Derive addresses for different users
+const aliceAddress = await wallet.getAddress(0);  // User 0
+const bobAddress = await wallet.getAddress(1);    // User 1
+const carolAddress = await wallet.getAddress(2);  // User 2
+
+// Get multiple addresses at once
+const addresses = await wallet.getAddresses(10);  // Derive 10 addresses
+console.log('10 user addresses:', addresses);
+
+// Sign transaction for specific user
+const provider = new ethers.JsonRpcProvider('https://...');
+const aliceSigner = await wallet.getSigner(0, provider);
+const tx = await aliceSigner.sendTransaction({
+  to: '0x...',
+  value: ethers.parseEther('0.1')
+});
+
+// Sign message for specific user
+const bobSignature = await wallet.signMessage(1, 'Hello from Bob');
+```
+
+#### Multi-User Wallet Manager with HD Wallet
+
+```typescript
+class HdWalletManager {
+  private hdWallet: KmsHdWallet;
+
+  async initialize() {
+    // Load existing HD wallet or create new one
+    const kmsKeyId = await this.getOrCreateMasterKeyId();
+    this.hdWallet = new KmsHdWallet({ keyId: kmsKeyId });
+  }
+
+  async createUserWallet(userId: string) {
+    // Get next available index from database
+    const index = await db.userWallet.count();
+
+    // Derive address for this user
+    const address = await this.hdWallet.getAddress(index);
+
+    // Save to database
+    await db.userWallet.create({
+      data: { userId, walletIndex: index, ethereumAddress: address }
+    });
+
+    return { address, index };
+  }
+
+  async getUserSigner(userId: string, provider: ethers.Provider) {
+    const record = await db.userWallet.findUnique({ where: { userId } });
+    return this.hdWallet.getSigner(record.walletIndex, provider);
+  }
+
+  async signForUser(userId: string, message: string) {
+    const record = await db.userWallet.findUnique({ where: { userId } });
+    return this.hdWallet.signMessage(record.walletIndex, message);
+  }
+}
+```
+
+#### Cost Comparison
+
+**Traditional KmsWallet (one key per user)**
+- 100 users = 100 KMS keys = $100/month
+- Each user has independent KMS key
+
+**KmsHdWallet (one key for all users)**
+- 100 users = 1 KMS key = $1/month
+- All users share one master key, unique derived addresses
+
+```typescript
+// Cost savings example
+const { wallet } = await KmsHdWallet.create({
+  description: 'Master HD Wallet'
+});
+
+// Generate 100 user addresses from single KMS key
+const addresses = await wallet.getAddresses(100);
+
+console.log('100 users managed with 1 KMS key');
+console.log('Monthly cost: $1 (vs $100 with separate keys)');
+console.log('Annual savings: $1,188');
+```
+
+#### Using Existing KMS Key
+
+```typescript
+// If you already have a KMS key
+const wallet = new KmsHdWallet({
+  keyId: 'existing-kms-key-id',
+  region: 'us-east-1',
+  basePath: "m/44'/60'/0'/0"  // optional, Ethereum default
+});
+
+const address = await wallet.getAddress(0);
 ```
 
 ### Multi-User Wallet Management
@@ -220,6 +344,43 @@ new KmsSigner(config: KmsSignerConfig)
 - `signMessage(message: string | Uint8Array): Promise<string>` - Sign message
 - `sendTransaction(tx: TransactionRequest): Promise<TransactionResponse>` - Sign and send transaction
 - `connect(provider: Provider): KmsSigner` - Connect to different provider
+
+### KmsHdWallet
+
+HD Wallet (Hierarchical Deterministic) that generates unlimited addresses from one KMS key using BIP32/BIP44 standard.
+
+#### Constructor
+```typescript
+new KmsHdWallet(config: KmsHdWalletConfig)
+```
+
+**Config Options:**
+- `keyId: string` - KMS Key ID for seed generation
+- `region?: string` - AWS region (optional)
+- `basePath?: string` - Base derivation path (optional, defaults to `m/44'/60'/0'/0`)
+
+#### Methods
+- `getAddress(index: number): Promise<string>` - Get Ethereum address at index
+- `getAddresses(count: number, startIndex?: number): Promise<string[]>` - Derive multiple addresses
+- `getPrivateKey(index: number): Promise<string>` - Get private key at index (use with caution)
+- `getPublicKey(index: number): Promise<string>` - Get public key at index
+- `signMessage(index: number, message: string | Uint8Array): Promise<string>` - Sign message with specific account
+- `signTransaction(index: number, tx: TransactionRequest): Promise<string>` - Sign transaction with specific account
+- `getWallet(index: number, provider?: Provider): Promise<Wallet>` - Get ethers.js Wallet for account
+- `getSigner(index: number, provider: Provider): Promise<Wallet>` - Get ethers.js Signer for account (alias)
+- `getKeyId(): string` - Get KMS Key ID
+- `getBasePath(): string` - Get base derivation path
+- `static create(config: CreateKmsHdWalletConfig): Promise<CreateKmsHdWalletResult>` - Create new master KMS key and HD wallet
+
+**CreateKmsHdWalletResult:**
+```typescript
+{
+  wallet: KmsHdWallet;
+  keyId: string;
+  firstAddress: string;  // Address at index 0
+  basePath: string;
+}
+```
 
 ## Examples
 
