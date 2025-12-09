@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import Ganache from 'ganache';
-import { KmsWallet, KmsWalletProvider } from '../src';
+import { KmsWallet, KmsSigner } from '../src';
 import { KMSClient, ScheduleKeyDeletionCommand } from '@aws-sdk/client-kms';
 
 describe('KMS Wallet', () => {
@@ -230,22 +230,22 @@ describe('KMS Wallet', () => {
     });
   });
 
-  describe('KmsWalletProvider', () => {
+  describe('KmsSigner', () => {
     const getKmsKeyId = () => testKmsKeyId;
     const hasKmsKey = () => !!getKmsKeyId();
 
     describe('基本的な使い方', () => {
-      it('KmsWalletProviderインスタンスを作成できる', async () => {
+      it('KmsSignerインスタンスを作成できる', async () => {
         const kmsWallet = new KmsWallet({
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
-        expect(kmsProvider).toBeDefined();
+        expect(signer).toBeDefined();
       });
 
       it('アドレスを取得できる', async () => {
@@ -253,15 +253,15 @@ describe('KMS Wallet', () => {
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
-        const address = await kmsProvider.getAddress();
+        const address = await signer.getAddress();
 
         expect(address).toMatch(/^0x[a-fA-F0-9]{40}$/);
-        console.log(`KmsWalletProvider address: ${address}`);
+        console.log(`KmsSigner address: ${address}`);
       });
 
       it('残高を取得できる', async () => {
@@ -269,13 +269,13 @@ describe('KMS Wallet', () => {
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
-        const address = await kmsProvider.getAddress();
-        const balance = await kmsProvider.getBalance(address);
+        const address = await signer.getAddress();
+        const balance = await provider.getBalance(address);
 
         expect(balance).toBeGreaterThanOrEqual(0n);
         console.log(`Balance: ${ethers.formatEther(balance)} ETH`);
@@ -288,12 +288,12 @@ describe('KMS Wallet', () => {
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
-        const address = await kmsProvider.getAddress();
+        const address = await signer.getAddress();
 
         // Fund the KMS wallet
         const fundTx = await fundingWallet.sendTransaction({
@@ -302,9 +302,9 @@ describe('KMS Wallet', () => {
         });
         await fundTx.wait();
 
-        // Send transaction using KmsWalletProvider
+        // Send transaction using KmsSigner
         const recipient = ethers.Wallet.createRandom().address;
-        const tx = await kmsProvider.sendTransaction({
+        const tx = await signer.sendTransaction({
           to: recipient,
           value: ethers.parseEther('0.1'),
         });
@@ -323,12 +323,12 @@ describe('KMS Wallet', () => {
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
-        const address = await kmsProvider.getAddress();
+        const address = await signer.getAddress();
 
         // Fund the KMS wallet
         const fundTx = await fundingWallet.sendTransaction({
@@ -343,7 +343,7 @@ describe('KMS Wallet', () => {
         const txHashes: string[] = [];
 
         for (let i = 0; i < txCount; i++) {
-          const tx = await kmsProvider.sendTransaction({
+          const tx = await signer.sendTransaction({
             to: recipient,
             value: ethers.parseEther('0.1'),
           });
@@ -365,13 +365,13 @@ describe('KMS Wallet', () => {
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
         const message = 'Sign this message';
-        const signature = await kmsProvider.signMessage(message);
+        const signature = await signer.signMessage(message);
 
         expect(signature).toMatch(/^0x[a-fA-F0-9]{130}$/);
         console.log(`✓ Message signed: ${signature.substring(0, 20)}...`);
@@ -382,14 +382,14 @@ describe('KMS Wallet', () => {
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
         const message = 'Verify this signature';
-        const signature = await kmsProvider.signMessage(message);
-        const address = await kmsProvider.getAddress();
+        const signature = await signer.signMessage(message);
+        const address = await signer.getAddress();
 
         const recoveredAddress = ethers.verifyMessage(message, signature);
 
@@ -398,53 +398,50 @@ describe('KMS Wallet', () => {
       });
     });
 
-    describe('Provider機能', () => {
-      it('ブロック番号を取得できる', async () => {
+    describe('Signer機能', () => {
+      it('Providerに接続できる', async () => {
         const kmsWallet = new KmsWallet({
           keyId: getKmsKeyId()!,
         });
 
-        const kmsProvider = new KmsWalletProvider({
+        const signer = new KmsSigner({
           kmsWallet,
           provider,
         });
 
-        const blockNumber = await kmsProvider.getBlockNumber();
+        expect(signer.provider).toBe(provider);
+      });
+
+      it('connect()で新しいSignerを作成できる', async () => {
+        const kmsWallet = new KmsWallet({
+          keyId: getKmsKeyId()!,
+        });
+
+        const signer = new KmsSigner({
+          kmsWallet,
+        });
+
+        const connectedSigner = signer.connect(provider);
+
+        expect(connectedSigner).toBeInstanceOf(KmsSigner);
+        expect(connectedSigner.provider).toBe(provider);
+        console.log(`✓ Signer connected to provider`);
+      });
+
+      it('Providerを通してブロック番号を取得できる', async () => {
+        const kmsWallet = new KmsWallet({
+          keyId: getKmsKeyId()!,
+        });
+
+        const signer = new KmsSigner({
+          kmsWallet,
+          provider,
+        });
+
+        const blockNumber = await signer.provider!.getBlockNumber();
 
         expect(blockNumber).toBeGreaterThanOrEqual(0);
         console.log(`Current block: ${blockNumber}`);
-      });
-
-      it('ネットワーク情報を取得できる', async () => {
-        const kmsWallet = new KmsWallet({
-          keyId: getKmsKeyId()!,
-        });
-
-        const kmsProvider = new KmsWalletProvider({
-          kmsWallet,
-          provider,
-        });
-
-        const network = await kmsProvider.getNetwork();
-
-        expect(network.chainId).toBe(1337n);
-        console.log(`Network: chainId ${network.chainId}`);
-      });
-
-      it('ガス価格を取得できる', async () => {
-        const kmsWallet = new KmsWallet({
-          keyId: getKmsKeyId()!,
-        });
-
-        const kmsProvider = new KmsWalletProvider({
-          kmsWallet,
-          provider,
-        });
-
-        const feeData = await kmsProvider.getFeeData();
-
-        expect(feeData.gasPrice).toBeDefined();
-        console.log(`Gas price: ${ethers.formatUnits(feeData.gasPrice!, 'gwei')} gwei`);
       });
     });
   });

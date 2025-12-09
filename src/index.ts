@@ -6,6 +6,6 @@ export {
 } from './KmsWallet';
 
 export {
-  KmsWalletProvider,
-  KmsWalletProviderConfig,
-} from './KmsWalletProvider';
+  KmsSigner,
+  KmsSignerConfig,
+} from './KmsSigner';
