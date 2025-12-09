@@ -4,3 +4,8 @@ export {
   CreateKmsWalletConfig,
   CreateKmsWalletResult,
 } from './KmsWallet';
+
+export {
+  KmsWalletProvider,
+  KmsWalletProviderConfig,
+} from './KmsWalletProvider';
