@@ -14,10 +14,27 @@
     "kms",
     "aws",
     "wallet",
-    "signing"
+    "signing",
+    "ethers",
+    "signer",
+    "blockchain",
+    "web3"
   ],
-  "author": "",
+  "author": "seki-seki",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seki-seki/kms-wallet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seki-seki/kms-wallet/issues"
+  },
+  "homepage": "https://github.com/seki-seki/kms-wallet#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.26",

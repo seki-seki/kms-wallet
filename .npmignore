@@ -1,9 +1,13 @@
 src/
 example/
+test/
 tsconfig.json
+jest.config.js
 .git/
 .gitignore
 *.log
 .env
 .DS_Store
 SETUP.md
+*.test.ts
+*.spec.ts
